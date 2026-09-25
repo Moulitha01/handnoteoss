@@ -10,8 +10,8 @@ import cv2
 import numpy as np
 from PIL import Image, ImageOps
 
-from .line_extractor import ink_mask, remove_ruled_lines, remove_small_blobs
-from .line_extractor import segment_lines as _segment_cleaned
+from .line_extractor_old import ink_mask, remove_ruled_lines, remove_small_blobs
+from .line_extractor_old import segment_lines as _segment_cleaned
 
 MAX_SIDE = 3000
 

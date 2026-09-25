@@ -539,216 +539,300 @@ def remove_small_blobs(
 def segment_lines(
     mask,
     norm,
-    min_height=8,
-    min_width=25,
-    min_ink=0.002,
-    pad_x=20,
-    pad_y=8,
+    min_height=10,
+    min_width=30,
+    min_ink=0.004,
+    pad_x=18,
+    pad_y=10,
 ):
     """
-    Detect handwritten rows and return one grayscale OCR crop per row.
+    Detect separate handwritten text rows.
 
-    Uses connected-component vertical clustering first, which prevents two
-    nearby handwritten rows from being merged by projection smoothing.
+    mask:
+        cleaned binary image, ink = 255.
+        Used ONLY for locating handwriting.
+
+    norm:
+        normalized grayscale page.
+        Actual OCR crops are taken from this image.
+
+    Returns:
+        list of PIL RGB images, one image per handwritten row.
     """
 
-    if mask is None or mask.size == 0 or norm is None or norm.size == 0:
+    if mask is None or mask.size == 0:
         return []
 
-    mask = (mask > 0).astype(np.uint8) * 255
-    height, width = mask.shape[:2]
+    if norm is None or norm.size == 0:
+        return []
 
-    n, labels, stats, centroids = cv2.connectedComponentsWithStats(
-        mask, connectivity=8
+    height, width = mask.shape
+
+    # ---------------------------------------------------------
+    # 1. Horizontal projection
+    # ---------------------------------------------------------
+    #
+    # Count how much handwriting exists in every image row.
+    #
+    profile = np.count_nonzero(mask, axis=1).astype(np.float32)
+
+    if profile.max() <= 0:
+        return []
+
+    # ---------------------------------------------------------
+    # 2. Smooth VERY lightly
+    # ---------------------------------------------------------
+    #
+    # Previously stronger smoothing could fill the whitespace
+    # between two handwritten rows and make them look like one.
+    #
+    kernel_size = 3
+
+    kernel = (
+        np.ones(kernel_size, dtype=np.float32)
+        / kernel_size
     )
 
-    components = []
-    for i in range(1, n):
-        x = int(stats[i, cv2.CC_STAT_LEFT])
-        y = int(stats[i, cv2.CC_STAT_TOP])
-        w = int(stats[i, cv2.CC_STAT_WIDTH])
-        h = int(stats[i, cv2.CC_STAT_HEIGHT])
-        area = int(stats[i, cv2.CC_STAT_AREA])
+    smooth = np.convolve(
+        profile,
+        kernel,
+        mode="same",
+    )
 
-        if area < 8 or (w <= 1 and h <= 2):
-            continue
-        if h > height * 0.30:
-            continue
+    # ---------------------------------------------------------
+    # 3. Detect rows containing meaningful ink
+    # ---------------------------------------------------------
+    #
+    # Keep this threshold low enough for thin handwriting.
+    #
+    threshold = max(
+        1.0,
+        smooth.max() * 0.018,
+    )
 
-        components.append({
-            "x0": x, "y0": y, "x1": x + w, "y1": y + h,
-            "cy": float(centroids[i][1]), "h": h, "area": area,
-        })
+    active = smooth > threshold
 
-    rows = []
+    # ---------------------------------------------------------
+    # 4. Find continuous active regions
+    # ---------------------------------------------------------
 
-    if components:
-        hs = [
-            c["h"] for c in components
-            if 3 <= c["h"] <= max(8, int(height * 0.08))
-        ]
-        char_h = float(np.median(hs)) if hs else 18.0
-        centre_tol = max(7.0, min(28.0, char_h * 0.80))
+    raw_runs = []
 
-        for c in sorted(components, key=lambda z: (z["cy"], z["x0"])):
-            best = None
-            best_score = None
+    start = None
 
-            for idx, row in enumerate(rows):
-                overlap = max(
-                    0, min(c["y1"], row["y1"]) - max(c["y0"], row["y0"])
-                )
-                smaller_h = max(1, min(c["h"], row["y1"] - row["y0"]))
-                overlap_ratio = overlap / smaller_h
-                centre_distance = abs(c["cy"] - row["cy"])
+    for y, is_active in enumerate(active):
 
-                if overlap_ratio >= 0.28 or centre_distance <= centre_tol:
-                    score = centre_distance - overlap_ratio * char_h
-                    if best_score is None or score < best_score:
-                        best_score = score
-                        best = idx
+        if is_active and start is None:
 
-            if best is None:
-                rows.append({
-                    "x0": c["x0"], "y0": c["y0"],
-                    "x1": c["x1"], "y1": c["y1"],
-                    "cy": c["cy"], "weight": max(1, c["area"]),
-                    "count": 1,
-                })
-            else:
-                row = rows[best]
-                old = row["weight"]
-                add = max(1, c["area"])
-                total = old + add
-                row["cy"] = (row["cy"] * old + c["cy"] * add) / total
-                row["weight"] = total
-                row["x0"] = min(row["x0"], c["x0"])
-                row["y0"] = min(row["y0"], c["y0"])
-                row["x1"] = max(row["x1"], c["x1"])
-                row["y1"] = max(row["y1"], c["y1"])
-                row["count"] += 1
+            start = y
 
-        rows.sort(key=lambda r: r["cy"])
+        elif not is_active and start is not None:
 
-        # Merge only fragments that are clearly on the same baseline.
-        merged = []
-        for row in rows:
-            if not merged:
-                merged.append(row.copy())
-                continue
-
-            prev = merged[-1]
-            centre_gap = abs(row["cy"] - prev["cy"])
-            overlap = max(
-                0, min(row["y1"], prev["y1"]) - max(row["y0"], prev["y0"])
+            raw_runs.append(
+                [start, y]
             )
-            min_h = max(
-                1, min(row["y1"] - row["y0"], prev["y1"] - prev["y0"])
-            )
-            overlap_ratio = overlap / min_h
 
-            if centre_gap <= max(5.0, char_h * 0.38) and overlap_ratio >= 0.45:
-                total = prev["weight"] + row["weight"]
-                prev["cy"] = (
-                    prev["cy"] * prev["weight"] + row["cy"] * row["weight"]
-                ) / total
-                prev["weight"] = total
-                prev["x0"] = min(prev["x0"], row["x0"])
-                prev["y0"] = min(prev["y0"], row["y0"])
-                prev["x1"] = max(prev["x1"], row["x1"])
-                prev["y1"] = max(prev["y1"], row["y1"])
-                prev["count"] += row["count"]
-            else:
-                merged.append(row.copy())
+            start = None
 
-        rows = [
-            r for r in merged
-            if (r["y1"] - r["y0"] >= 3)
-            and ((r["x1"] - r["x0"] >= min_width) or r["count"] > 1)
-        ]
+    if start is not None:
 
-    # Projection fallback.
-    if not rows:
-        profile = np.count_nonzero(mask, axis=1).astype(np.float32)
-        if profile.max() <= 0:
-            return []
-
-        smooth = np.convolve(
-            profile, np.ones(3, dtype=np.float32) / 3.0, mode="same"
+        raw_runs.append(
+            [start, height]
         )
-        active = smooth > max(1.0, smooth.max() * 0.012)
 
-        runs = []
-        run_start = None
-        for y, on in enumerate(active):
-            if on and run_start is None:
-                run_start = y
-            elif not on and run_start is not None:
-                runs.append([run_start, y])
-                run_start = None
-        if run_start is not None:
-            runs.append([run_start, height])
+    if not raw_runs:
+        return []
 
-        for y0, y1 in runs:
-            if y1 - y0 < 3:
-                continue
-            strip = mask[y0:y1, :]
-            xs = np.where(strip.any(axis=0))[0]
-            if len(xs):
-                rows.append({
-                    "x0": int(xs[0]), "y0": y0,
-                    "x1": int(xs[-1] + 1), "y1": y1,
-                    "cy": (y0 + y1) / 2.0,
-                    "weight": int(np.count_nonzero(strip)), "count": 1,
-                })
+    # ---------------------------------------------------------
+    # 5. Estimate handwriting height
+    # ---------------------------------------------------------
+    #
+    # This makes merging adaptive rather than using one fixed
+    # merge_gap for every handwriting size.
+    #
+
+    candidate_heights = [
+        y1 - y0
+        for y0, y1 in raw_runs
+        if y1 - y0 >= 3
+    ]
+
+    if candidate_heights:
+
+        median_height = float(
+            np.median(candidate_heights)
+        )
+
+    else:
+
+        median_height = 15.0
+
+    # Only merge VERY small internal gaps.
+    #
+    # Example:
+    #
+    # letter stroke
+    #    2px gap       <- probably same text row
+    # letter stroke
+    #
+    # But:
+    #
+    # first sentence
+    #
+    #       large gap  <- must remain separate
+    #
+    # second sentence
+
+    merge_gap = max(
+        2,
+        min(
+            6,
+            int(median_height * 0.18),
+        ),
+    )
+
+    merged = []
+
+    for run in raw_runs:
+
+        if not merged:
+
+            merged.append(
+                run.copy()
+            )
+
+            continue
+
+        gap = (
+            run[0]
+            - merged[-1][1]
+        )
+
+        if gap <= merge_gap:
+
+            merged[-1][1] = run[1]
+
+        else:
+
+            merged.append(
+                run.copy()
+            )
+
+    # ---------------------------------------------------------
+    # 6. Build OCR crops
+    # ---------------------------------------------------------
 
     lines = []
 
-    for row in sorted(rows, key=lambda r: r["cy"]):
-        x0, y0 = int(row["x0"]), int(row["y0"])
-        x1, y1 = int(row["x1"]), int(row["y1"])
+    for y0, y1 in merged:
 
-        if y1 - y0 < min_height and row.get("count", 1) < 2:
+        if y1 - y0 < min_height:
             continue
+
+        strip = mask[
+            y0:y1,
+            :
+        ]
+
+        columns = np.where(
+            strip.any(axis=0)
+        )[0]
+
+        if len(columns) == 0:
+            continue
+
+        x0 = int(
+            columns[0]
+        )
+
+        x1 = int(
+            columns[-1] + 1
+        )
+
         if x1 - x0 < min_width:
             continue
 
-        density = (mask[y0:y1, x0:x1] > 0).mean()
-        if density < min_ink:
+        ink_density = (
+            strip[:, x0:x1] > 0
+        ).mean()
+
+        if ink_density < min_ink:
             continue
 
-        cx0 = max(0, x0 - pad_x)
-        cx1 = min(width, x1 + pad_x)
-        cy0 = max(0, y0 - pad_y)
-        cy1 = min(height, y1 + pad_y)
+        # ---------------------------------------------
+        # Add margins around the handwriting.
+        # ---------------------------------------------
 
-        crop = norm[cy0:cy1, cx0:cx1].copy()
+        crop_x0 = max(
+            0,
+            x0 - pad_x,
+        )
+
+        crop_x1 = min(
+            width,
+            x1 + pad_x,
+        )
+
+        crop_y0 = max(
+            0,
+            y0 - pad_y,
+        )
+
+        crop_y1 = min(
+            height,
+            y1 + pad_y,
+        )
+
+        # IMPORTANT:
+        # Use natural normalized grayscale,
+        # NOT the binary segmentation mask.
+        crop = norm[
+            crop_y0:crop_y1,
+            crop_x0:crop_x1,
+        ].copy()
+
         if crop.size == 0:
             continue
 
-        low = float(np.percentile(crop, 1))
-        high = float(np.percentile(crop, 99))
-        if high > low + 5:
-            crop = np.clip(
-                (crop.astype(np.float32) - low) * 255.0 / (high - low),
-                0, 255
-            ).astype(np.uint8)
-
-        crop = cv2.copyMakeBorder(
-            crop, 10, 10, 18, 18,
-            cv2.BORDER_CONSTANT, value=255
+        # Gentle contrast enhancement.
+        low = np.percentile(
+            crop,
+            1
         )
 
-        lines.append(Image.fromarray(crop).convert("RGB"))
+        high = np.percentile(
+            crop,
+            99
+        )
 
-    print(
-        f"[segment] detected {len(lines)} handwriting line"
-        f"{'' if len(lines) == 1 else 's'}",
-        flush=True,
-    )
+        if high > low + 5:
+
+            crop = np.clip(
+                (crop.astype(np.float32) - low)
+                * 255.0
+                / (high - low),
+                0,
+                255,
+            ).astype(np.uint8)
+
+        # Add white breathing room.
+        crop = cv2.copyMakeBorder(
+            crop,
+            8,
+            8,
+            14,
+            14,
+            cv2.BORDER_CONSTANT,
+            value=255,
+        )
+
+        lines.append(
+            Image.fromarray(
+                crop
+            ).convert("RGB")
+        )
 
     return lines
-
 # ---------------------------------------------------------------------------
 # Page preparation
 # ---------------------------------------------------------------------------

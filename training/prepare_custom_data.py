@@ -30,7 +30,7 @@ import sys
 import cv2
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from core.line_extractor import prepare_lines  # noqa: E402
+from core.line_extractor_old import prepare_lines  # noqa: E402
 
 IMG_EXT = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 

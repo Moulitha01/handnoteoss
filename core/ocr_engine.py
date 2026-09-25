@@ -689,28 +689,40 @@ def extract_text(
 
     # ---------------------------------------------------------------
     # Detect handwriting lines.
+    #
+    # IMPORTANT:
+    # Use the ACTIVE segmentation pipeline first.  The previous version
+    # called prepare_lines() from line_extractor_old.py; because it returned
+    # one crop, the new segment_lines() was never reached.
     # ---------------------------------------------------------------
 
-    lines = prepare_lines(
-        img
-        if img.ndim == 3
-        else cv2.cvtColor(
-            img,
-            cv2.COLOR_GRAY2BGR,
-        )
+    lines = segment_lines(
+        gray,
+        binary,
     )
 
-    # Old/fallback segmentation path.
+    _log(
+        "active segmenter returned %d line(s)"
+        % len(lines)
+    )
+
+    # If the active segmenter cannot find anything, use the smart page
+    # extractor as a fallback.  Both functions now come from the ACTIVE
+    # line_extractor.py module.
     if not lines:
 
         _log(
-            "smart line extraction found no lines; "
-            "trying fallback segmentation"
+            "active segmentation found no lines; "
+            "trying smart page extraction"
         )
 
-        lines = segment_lines(
-            gray,
-            binary,
+        lines = prepare_lines(
+            img
+            if img.ndim == 3
+            else cv2.cvtColor(
+                img,
+                cv2.COLOR_GRAY2BGR,
+            )
         )
 
     _log(

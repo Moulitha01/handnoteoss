@@ -1,51 +1,515 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Handwritten Notes Digitizer</title>
-<style>
-:root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--ac:#2563eb;--bd:#dfe3ea}
-@media(prefers-color-scheme:dark){:root{--bg:#12151c;--card:#1b202b;--fg:#e8ebf2;--bd:#2c3342}}
-*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--fg)}
-header{padding:18px 24px;background:var(--ac);color:#fff}header small{opacity:.85}
-main{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px;max-width:1200px;margin:auto}
-@media(max-width:800px){main{grid-template-columns:1fr}}
-.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px}
-input,textarea,select,button{font:inherit;padding:8px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--fg);width:100%;margin:4px 0}
-button{background:var(--ac);color:#fff;border:0;cursor:pointer;width:auto;padding:8px 14px}
-button.g{background:transparent;color:var(--fg);border:1px solid var(--bd)}
-textarea{min-height:240px;font-family:ui-monospace,monospace}
-.item{padding:8px;border-bottom:1px solid var(--bd);cursor:pointer}.item:hover{background:var(--bg)}
-img#pv{max-width:100%;border-radius:8px;margin-top:8px}
-</style></head><body>
-<header><b>Handwritten Notes Digitizer</b><br><small>OpenCV · Tesseract · HuggingFace TrOCR · SQLite — 100% open source</small></header>
-<main>
-<section class="card"><h3>1. Scan a note</h3>
-<input type="file" id="file" accept="image/*" capture="environment">
-<img id="pv" hidden>
-<input id="title" placeholder="Title (optional)">
-<select id="engine"><option value="auto">Engine: auto</option><option value="trocr">TrOCR (handwriting AI)</option><option value="tesseract">Tesseract (classic)</option></select>
-<button onclick="up()">Convert to text</button> <span id="st"></span>
-<h3>2. Edit &amp; export</h3>
-<input id="ntitle" placeholder="Note title"><input id="ntags" placeholder="tags, comma separated">
-<textarea id="ntext" placeholder="Recognised text appears here - fix any mistakes"></textarea>
-<button onclick="save()">Save changes</button>
-<span id="ex"></span></section>
-<section class="card"><h3>3. Search your notes</h3>
-<input id="q" placeholder="Search old notes..." oninput="load()"><div id="list"></div></section>
-</main>
-<script>
-let cur=null;const $=i=>document.getElementById(i);
-$("file").onchange=e=>{const f=e.target.files[0];if(f){$("pv").src=URL.createObjectURL(f);$("pv").hidden=false}};
-async function up(){const f=$("file").files[0];if(!f)return alert("Choose an image");
- const fd=new FormData();fd.append("image",f);fd.append("title",$("title").value);fd.append("engine",$("engine").value);
- $("st").textContent="Reading handwriting...";
- const r=await fetch("/api/upload",{method:"POST",body:fd});const n=await r.json();
- if(n.error){$("st").textContent="Error: "+n.error;return}
- $("st").textContent="Done using "+n.engine;show(n);load()}
-function show(n){cur=n;$("ntitle").value=n.title;$("ntags").value=n.tags||"";$("ntext").value=n.text;
- $("ex").innerHTML=["docx","xml","txt","md","json"].map(f=>`<a href="/api/notes/${n.id}/export/${f}"><button class="g" type="button">${f.toUpperCase()}</button></a>`).join(" ")}
-async function save(){if(!cur)return;await fetch("/api/notes/"+cur.id,{method:"PUT",headers:{"Content-Type":"application/json"},
- body:JSON.stringify({title:$("ntitle").value,text:$("ntext").value,tags:$("ntags").value})});load()}
-async function load(){const r=await fetch("/api/notes?q="+encodeURIComponent($("q").value));const a=await r.json();
- $("list").innerHTML=a.map(n=>`<div class="item" onclick='pick(${n.id})'><b>${n.title.replace(/</g,"&lt;")}</b><br><small>${n.created} · ${n.engine}</small></div>`).join("")||"<i>No notes yet</i>"}
-async function pick(id){show(await (await fetch("/api/notes/"+id)).json())}
-load();
-</script></body></html>
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>HandNote OSS</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/style.css') }}"
+    >
+</head>
+
+<body>
+
+<div class="page-shell">
+
+    <!-- ================= NAVBAR ================= -->
+
+    <header class="navbar">
+
+        <div class="brand">
+
+            <div class="brand-logo">
+                H
+            </div>
+
+            <div>
+                <div class="brand-name">
+                    HandNote
+                </div>
+
+                <div class="brand-subtitle">
+                    OSS / LOCAL FIRST
+                </div>
+            </div>
+
+        </div>
+
+
+        <div class="nav-actions">
+
+            <div class="local-status">
+                <span class="status-dot"></span>
+                runs on your machine
+            </div>
+
+            <button
+                class="theme-button"
+                id="themeButton"
+                type="button"
+            >
+                ◐
+            </button>
+
+        </div>
+
+    </header>
+
+
+    <!-- ================= HERO ================= -->
+
+    <section class="hero">
+
+        <div class="hero-content">
+
+            <div class="eyebrow">
+                OFFLINE HANDWRITING DIGITIZER
+            </div>
+
+            <h1>
+                Turn handwriting
+                <span>into useful text.</span>
+            </h1>
+
+            <p>
+                Photograph a note and run local OCR without
+                sending it to a cloud service.
+            </p>
+
+        </div>
+
+
+        <div class="freedom-badge">
+
+            <div class="freedom-icon">
+                ◎
+            </div>
+
+            <div>
+
+                <strong>
+                    Software Freedom Day ready
+                </strong>
+
+                <small>
+                    No cloud OCR · no API key · no hidden upload
+                </small>
+
+            </div>
+
+        </div>
+
+    </section>
+
+
+    <!-- ================= WORKSPACE ================= -->
+
+    <main class="workspace">
+
+
+        <!-- ================= SCAN ================= -->
+
+        <section class="panel scan-panel">
+
+            <div class="panel-header">
+
+                <div>
+                    <span class="section-number">
+                        01
+                    </span>
+
+                    <h2>
+                        Scan a note
+                    </h2>
+                </div>
+
+                <span class="local-label">
+                    LOCAL
+                </span>
+
+            </div>
+
+
+            <p class="panel-description">
+                Upload a clear JPG, PNG, WebP, or BMP.
+            </p>
+
+
+            <!-- IMAGE INPUT -->
+
+            <input
+                type="file"
+                id="imageInput"
+                accept="image/png,image/jpeg,image/webp,image/bmp"
+                hidden
+            >
+
+
+            <!-- UPLOAD AREA -->
+
+            <div
+                id="uploadArea"
+                class="upload-area"
+            >
+
+                <div id="uploadPlaceholder">
+
+                    <div class="upload-icon">
+                        +
+                    </div>
+
+                    <strong>
+                        Choose a handwritten note
+                    </strong>
+
+                    <span>
+                        Click here or drag an image
+                    </span>
+
+                </div>
+
+
+                <div
+                    id="previewContainer"
+                    class="preview-container hidden"
+                >
+
+                    <div class="preview-header">
+
+                        <span>
+                            Selected image
+                        </span>
+
+                        <button
+                            id="removeImage"
+                            type="button"
+                        >
+                            Remove
+                        </button>
+
+                    </div>
+
+
+                    <div class="preview-frame">
+
+                        <img
+                            id="imagePreview"
+                            alt="Selected handwritten note"
+                        >
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- ================= OCR CONTROLS ================= -->
+
+            <div class="control-row">
+
+                <div class="control-group">
+
+                    <label for="ocrEngine">
+                        Recognition language
+                    </label>
+
+
+                    <select id="ocrEngine">
+
+                        <option value="trocr">
+                            English · TrOCR handwritten
+                        </option>
+
+                        <option value="tamil">
+                            தமிழ் · Tamil OCR
+                        </option>
+
+                    </select>
+
+                </div>
+
+
+                <label class="debug-option">
+
+                    <input
+                        type="checkbox"
+                        id="debugCrops"
+                    >
+
+                    <span>
+                        Save segmentation debug crops
+                    </span>
+
+                </label>
+
+            </div>
+
+
+            <!-- CONVERT BUTTON -->
+
+            <button
+                id="convertButton"
+                class="primary-button"
+                type="button"
+            >
+
+                <span>
+                    Convert with TrOCR
+                </span>
+
+                <span>
+                    →
+                </span>
+
+            </button>
+
+
+            <div
+                id="processingMessage"
+                class="processing-message"
+            >
+                Choose a handwritten note to begin.
+            </div>
+
+        </section>
+
+
+        <!-- ================= EDIT ================= -->
+
+        <section class="panel edit-panel">
+
+            <div class="panel-header">
+
+                <div>
+
+                    <span class="section-number">
+                        02
+                    </span>
+
+                    <h2>
+                        Edit & keep
+                    </h2>
+
+                </div>
+
+
+                <span
+                    class="engine-label"
+                    id="engineLabel"
+                >
+                    TrOCR / English
+                </span>
+
+            </div>
+
+
+            <p class="panel-description">
+                Correct, save, and export your transcription.
+            </p>
+
+
+            <!-- METADATA -->
+
+            <div class="metadata-grid">
+
+                <div class="control-group">
+
+                    <label for="noteTitle">
+                        Title
+                    </label>
+
+                    <input
+                        id="noteTitle"
+                        type="text"
+                        placeholder="Untitled note"
+                    >
+
+                </div>
+
+
+                <div class="control-group">
+
+                    <label for="noteTags">
+                        Tags
+                    </label>
+
+                    <input
+                        id="noteTags"
+                        type="text"
+                        placeholder="ideas, meeting, tamil"
+                    >
+
+                </div>
+
+            </div>
+
+
+            <!-- TEXT EDITOR -->
+
+            <div class="editor">
+
+                <div class="editor-header">
+
+                    <span>
+                        Recognized text
+                    </span>
+
+                    <span id="lineCount">
+                        0 lines
+                    </span>
+
+                </div>
+
+
+                <textarea
+                    id="recognizedText"
+                    placeholder="Your recognized handwriting will appear here..."
+                ></textarea>
+
+            </div>
+
+
+            <!-- EDITOR BUTTONS -->
+
+            <div class="editor-actions">
+
+                <button
+                    id="copyButton"
+                    class="secondary-button"
+                    type="button"
+                >
+                    Copy text
+                </button>
+
+
+                <button
+                    id="saveButton"
+                    class="primary-small"
+                    type="button"
+                >
+                    Save note
+                    <span>↗</span>
+                </button>
+
+            </div>
+
+
+            <!-- EXPORT -->
+
+            <div class="export-row">
+
+                <span>
+                    Export
+                </span>
+
+                <div class="export-buttons">
+
+                    <button data-format="txt">
+                        TXT
+                    </button>
+
+                    <button data-format="md">
+                        MD
+                    </button>
+
+                    <button data-format="json">
+                        JSON
+                    </button>
+
+                    <button data-format="docx">
+                        DOCX
+                    </button>
+
+                </div>
+
+            </div>
+
+        </section>
+
+    </main>
+
+
+    <!-- ================= SAVED NOTES ================= -->
+
+    <section class="notes-panel panel">
+
+        <div class="panel-header">
+
+            <div>
+
+                <span class="section-number">
+                    03
+                </span>
+
+                <h2>
+                    Your notes
+                </h2>
+
+            </div>
+
+
+            <span
+                id="noteCount"
+                class="note-count"
+            >
+                0
+            </span>
+
+        </div>
+
+
+        <p class="panel-description">
+            Saved locally in SQLite.
+        </p>
+
+
+        <div class="search-box">
+
+            <span>
+                ⌕
+            </span>
+
+            <input
+                id="searchInput"
+                type="text"
+                placeholder="Search title, text, or tags"
+            >
+
+        </div>
+
+
+        <div
+            id="notesContainer"
+            class="notes-container"
+        >
+
+            <div class="empty-state">
+                Saved notes will appear here.
+            </div>
+
+        </div>
+
+    </section>
+
+
+    <!-- ================= FOOTER ================= -->
+
+    <footer>
+        HandNote OSS · MIT License
+    </footer>
+
+</div>
+
+
+<script
+    src="{{ url_for('static', filename='js/app.js') }}"
+></script>
+
+</body>
+
+</html>
