@@ -1,0 +1,16 @@
+# 100% open-source stack
+flask>=3.0
+opencv-python-headless>=4.8
+numpy
+pillow
+pytesseract          # wrapper for Tesseract OCR (install the tesseract binary separately)
+python-docx          # DOCX export
+# --- Deep-learning handwriting engine (HuggingFace TrOCR) ---
+torch
+transformers>=4.40
+# --- Training / evaluation only ---
+datasets
+evaluate
+jiwer
+accelerate
+sentencepiece

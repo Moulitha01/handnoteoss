@@ -1,0 +1,37 @@
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment variables
+.env
+
+# Runtime database
+data/notes.db
+
+# User-uploaded images
+data/uploads/
+uploads/
+
+# Debug output
+debug/
+debug_lines/
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Hugging Face / model cache
+.cache/

@@ -1,0 +1,51 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Handwritten Notes Digitizer</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--ac:#2563eb;--bd:#dfe3ea}
+@media(prefers-color-scheme:dark){:root{--bg:#12151c;--card:#1b202b;--fg:#e8ebf2;--bd:#2c3342}}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+header{padding:18px 24px;background:var(--ac);color:#fff}header small{opacity:.85}
+main{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px;max-width:1200px;margin:auto}
+@media(max-width:800px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px}
+input,textarea,select,button{font:inherit;padding:8px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--fg);width:100%;margin:4px 0}
+button{background:var(--ac);color:#fff;border:0;cursor:pointer;width:auto;padding:8px 14px}
+button.g{background:transparent;color:var(--fg);border:1px solid var(--bd)}
+textarea{min-height:240px;font-family:ui-monospace,monospace}
+.item{padding:8px;border-bottom:1px solid var(--bd);cursor:pointer}.item:hover{background:var(--bg)}
+img#pv{max-width:100%;border-radius:8px;margin-top:8px}
+</style></head><body>
+<header><b>Handwritten Notes Digitizer</b><br><small>OpenCV · Tesseract · HuggingFace TrOCR · SQLite — 100% open source</small></header>
+<main>
+<section class="card"><h3>1. Scan a note</h3>
+<input type="file" id="file" accept="image/*" capture="environment">
+<img id="pv" hidden>
+<input id="title" placeholder="Title (optional)">
+<select id="engine"><option value="auto">Engine: auto</option><option value="trocr">TrOCR (handwriting AI)</option><option value="tesseract">Tesseract (classic)</option></select>
+<button onclick="up()">Convert to text</button> <span id="st"></span>
+<h3>2. Edit &amp; export</h3>
+<input id="ntitle" placeholder="Note title"><input id="ntags" placeholder="tags, comma separated">
+<textarea id="ntext" placeholder="Recognised text appears here - fix any mistakes"></textarea>
+<button onclick="save()">Save changes</button>
+<span id="ex"></span></section>
+<section class="card"><h3>3. Search your notes</h3>
+<input id="q" placeholder="Search old notes..." oninput="load()"><div id="list"></div></section>
+</main>
+<script>
+let cur=null;const $=i=>document.getElementById(i);
+$("file").onchange=e=>{const f=e.target.files[0];if(f){$("pv").src=URL.createObjectURL(f);$("pv").hidden=false}};
+async function up(){const f=$("file").files[0];if(!f)return alert("Choose an image");
+ const fd=new FormData();fd.append("image",f);fd.append("title",$("title").value);fd.append("engine",$("engine").value);
+ $("st").textContent="Reading handwriting...";
+ const r=await fetch("/api/upload",{method:"POST",body:fd});const n=await r.json();
+ if(n.error){$("st").textContent="Error: "+n.error;return}
+ $("st").textContent="Done using "+n.engine;show(n);load()}
+function show(n){cur=n;$("ntitle").value=n.title;$("ntags").value=n.tags||"";$("ntext").value=n.text;
+ $("ex").innerHTML=["docx","xml","txt","md","json"].map(f=>`<a href="/api/notes/${n.id}/export/${f}"><button class="g" type="button">${f.toUpperCase()}</button></a>`).join(" ")}
+async function save(){if(!cur)return;await fetch("/api/notes/"+cur.id,{method:"PUT",headers:{"Content-Type":"application/json"},
+ body:JSON.stringify({title:$("ntitle").value,text:$("ntext").value,tags:$("ntags").value})});load()}
+async function load(){const r=await fetch("/api/notes?q="+encodeURIComponent($("q").value));const a=await r.json();
+ $("list").innerHTML=a.map(n=>`<div class="item" onclick='pick(${n.id})'><b>${n.title.replace(/</g,"&lt;")}</b><br><small>${n.created} · ${n.engine}</small></div>`).join("")||"<i>No notes yet</i>"}
+async function pick(id){show(await (await fetch("/api/notes/"+id)).json())}
+load();
+</script></body></html>
