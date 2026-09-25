@@ -31,7 +31,7 @@ debug_lines/
 
 # OS
 .DS_Store
-Thumbs.db
+Thumbs.d
 
 # Hugging Face / model cache
 .cache/
