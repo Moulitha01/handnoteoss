@@ -1,4 +1,4 @@
-"""SQLite storage with FTS5 full-text search so old notes become searchable)."""
+"""SQLite storage with FTS5 full-text search ( so old notes become searchable)."""
 import os
 import sqlite3
 from datetime import datetime
